@@ -1,4 +1,4 @@
-name: LinkToGSI Inline Workflow
+name: AutoGSI Build
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
         description: 'Direct link to firmware zip'
         required: true
       rom_type:
-        description: 'ROM type (Generic, HyperOS, etc)'
+        description: 'ROM type (e.g. Pixel, HyperOS, etc)'
         required: true
 
 jobs:
@@ -29,12 +29,17 @@ jobs:
 
     - name: 📁 Setup directories
       run: |
-        rm -rf DownloadedROMs UnpackedROMs Output OutputSplit
-        mkdir -p DownloadedROMs UnpackedROMs UnpackedROMs/system UnpackedROMs/temp_mount Output OutputSplit
+        rm -rf DownloadedROMs UnpackedROMs
+        mkdir -p DownloadedROMs UnpackedROMs
 
     - name: 🔧 Clone Firmware_extractor
       run: |
-        git clone --recurse-submodules https://github.com/erfanoabdi/Firmware_extractor.git Tools/Firmware_extractor
+        if [[ -d "Tools/Firmware_extractor" ]]; then
+          git -C Tools/Firmware_extractor fetch origin
+          git -C Tools/Firmware_extractor reset --hard origin/master
+        else
+          git clone --recurse-submodules https://github.com/FoxetGSI/Firmware_extractor.git Tools/Firmware_extractor
+        fi
 
     - name: 🌐 Download and extract firmware
       run: |
@@ -47,8 +52,13 @@ jobs:
         for partition in $partitions; do
           if [[ -f "UnpackedROMs/$partition.img" ]]; then
             echo "🔍 Unpacking $partition.img"
-            mkdir -p "UnpackedROMs/$partition"
-            sudo mount -o loop,ro,nosuid,nodev -t ext4 "UnpackedROMs/$partition.img" UnpackedROMs/temp_mount || sudo mount "UnpackedROMs/$partition.img" UnpackedROMs/temp_mount
+            mkdir -p "UnpackedROMs/temp_mount" "UnpackedROMs/$partition"
+            fs_type=$(blkid -o value -s TYPE "UnpackedROMs/$partition.img" 2>/dev/null)
+            if [[ "$fs_type" == "ext2" || "$fs_type" == "ext4" ]]; then
+              sudo mount -o loop,ro -t ext4 "UnpackedROMs/$partition.img" UnpackedROMs/temp_mount
+            else
+              sudo mount "UnpackedROMs/$partition.img" UnpackedROMs/temp_mount
+            fi
             rsync -a --no-perms --no-owner --no-group UnpackedROMs/temp_mount/ UnpackedROMs/$partition/ || echo "⚠️ rsync fallback for $partition"
             sudo umount -R UnpackedROMs/temp_mount
           fi
@@ -56,22 +66,23 @@ jobs:
 
     - name: 🔀 Reposition partitions into system
       run: |
-        partitions="vendor system_ext product optics prism mi_ext my_bigball my_engineering my_manifest my_region my_carrier my_heytap my_product my_stock"
         for partition in $partitions; do
-          if [ -d "UnpackedROMs/system/$partition" ] && [ ! -L "UnpackedROMs/system/$partition" ]; then
-            target="UnpackedROMs/system"
-          elif [ -d "UnpackedROMs/system/system/$partition" ] && [ ! -L "UnpackedROMs/system/system/$partition" ]; then
-            target="UnpackedROMs/system/system"
-          else
-            continue
-          fi
-          if [ -d "UnpackedROMs/$partition" ]; then
-            echo "📦 Moving $partition into $target"
-            mv "UnpackedROMs/$partition" "$target/"
+          if [ "$partition" != "system" ]; then
+            if [ -d "UnpackedROMs/system/$partition" ] && [ ! -L "UnpackedROMs/system/$partition" ]; then
+              target="UnpackedROMs/system"
+            elif [ -d "UnpackedROMs/system/system/$partition" ] && [ ! -L "UnpackedROMs/system/system/$partition" ]; then
+              target="UnpackedROMs/system/system"
+            else
+              continue
+            fi
+            if [ -d "UnpackedROMs/$partition" ]; then
+              echo "📦 Moving $partition into $target"
+              mv "UnpackedROMs/$partition" "$target/"
+            fi
           fi
         done
 
-    - name: 🧬 Patch build.prop path if missing
+    - name: 🧬 Patch build.prop if needed
       run: |
         if [ -f "UnpackedROMs/system/build.prop" ] && [ ! -f "UnpackedROMs/system/system/build.prop" ]; then
           mkdir -p "UnpackedROMs/system/system"
@@ -81,28 +92,3 @@ jobs:
     - name: 🛠️ Run FoxetGSITool
       run: |
         sudo bash FoxetGSITool.sh UnpackedROMs/system "${{ github.event.inputs.rom_type }}"
-
-    - name: 🧩 Split image if >2GB
-      run: |
-        IMAGE=$(find Output -name "*.img" | head -n1)
-        if [ -f "$IMAGE" ]; then
-          SIZE=$(stat -c%s "$IMAGE")
-          if [ "$SIZE" -gt $((2 * 1024 * 1024 * 1024)) ]; then
-            echo "🧩 Splitting image..."
-            split -b 1900M "$IMAGE" "OutputSplit/$(basename $IMAGE).part"
-          else
-            cp "$IMAGE" OutputSplit/
-          fi
-        else
-          echo "❌ No image found in Output/"
-          exit 1
-        fi
-
-    - name: 🚀 Upload to GitHub Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: "AutoGSI-${{ github.run_id }}"
-        name: "AutoGSI Build ${{ github.run_id }}"
-        files: OutputSplit/*
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

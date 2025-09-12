@@ -1,4 +1,4 @@
-name: LinkToGSI Builder
+name: Native LinkToGSI Builder
 
 on:
   workflow_dispatch:
@@ -7,12 +7,12 @@ on:
         description: 'Direct link to firmware zip'
         required: true
       rom_type:
-        description: 'ROM type (e.g. Pixel, HyperOS, etc)'
+        description: 'Type of ROM (e.g. Pixel, HyperOS)'
         required: true
 
 jobs:
   build-gsi:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
     - name: ⬇️ Checkout repo
@@ -21,18 +21,77 @@ jobs:
     - name: 🛠️ Install dependencies
       run: |
         sudo apt update
-        sudo apt install -y \
-          unzip zip p7zip-full p7zip-rar rsync util-linux wget \
-          brotli lz4 python3-pip protobuf-compiler gawk
+        sudo apt install -y unzip zip p7zip-full rsync util-linux wget \
+          brotli lz4 python3-pip gawk e2fsprogs
         pip3 install pycryptodome extract-dtb tqdm
 
-    - name: 🔧 Clone Firmware_extractor (fallback tool)
+    - name: 🔽 Download firmware
       run: |
-        git clone --depth=1 https://github.com/AndroidDumps/Firmware_extractor.git Tools/Firmware_extractor
+        mkdir -p DownloadedROMs
+        wget -nv -P DownloadedROMs "${{ github.event.inputs.firmware_url }}"
 
-    - name: 🛠️ Run LinkToGSI.sh
+    - name: 🔧 Clone Firmware_extractor
       run: |
-        sudo bash LinkToGSI.sh "${{ github.event.inputs.firmware_url }}" "${{ github.event.inputs.rom_type }}"
+        if [ -d Tools/Firmware_extractor ]; then
+          git -C Tools/Firmware_extractor fetch origin
+          git -C Tools/Firmware_extractor reset --hard origin/master
+        else
+          git clone --recurse-submodules https://github.com/AndroidDumps/Firmware_extractor.git Tools/Firmware_extractor
+        fi
+
+    - name: 📂 Extract firmware
+      run: |
+        mkdir -p UnpackedROMs
+        bash Tools/Firmware_extractor/extractor.sh DownloadedROMs/* UnpackedROMs/
+
+    - name: 🔄 Rename *_a.img to *.img
+      run: |
+        partitions="vendor system system_ext product optics prism mi_ext my_bigball my_engineering my_manifest my_region my_carrier my_heytap my_product my_stock"
+        for p in $partitions; do
+          if [[ -f "UnpackedROMs/${p}_a.img" ]]; then
+            mv "UnpackedROMs/${p}_a.img" "UnpackedROMs/${p}.img"
+          fi
+        done
+
+    - name: 📦 Extract partitions
+      run: |
+        partitions="vendor system system_ext product optics prism mi_ext my_bigball my_engineering my_manifest my_region my_carrier my_heytap my_product my_stock"
+        mkdir -p UnpackedROMs/temp_mount
+        for p in $partitions; do
+          if [[ -f "UnpackedROMs/${p}.img" ]]; then
+            mkdir -p "UnpackedROMs/${p}"
+            fs_type=$(blkid -o value -s TYPE "UnpackedROMs/${p}.img" 2>/dev/null)
+            if [[ "$fs_type" == "ext2" || "$fs_type" == "ext4" ]]; then
+              sudo mount -o loop,ro -t ext4 "UnpackedROMs/${p}.img" UnpackedROMs/temp_mount
+            else
+              sudo mount "UnpackedROMs/${p}.img" UnpackedROMs/temp_mount
+            fi
+            cp -r UnpackedROMs/temp_mount/. "UnpackedROMs/${p}/"
+            sudo umount -R UnpackedROMs/temp_mount
+          fi
+        done
+
+    - name: 🔀 Merge partitions into system
+      run: |
+        partitions="vendor system_ext product optics prism mi_ext my_bigball my_engineering my_manifest my_region my_carrier my_heytap my_product my_stock"
+        for p in $partitions; do
+          if [ "$p" != "system" ]; then
+            if [ -d "UnpackedROMs/system/$p" ] && [ ! -L "UnpackedROMs/system/$p" ]; then
+              target="UnpackedROMs/system"
+            elif [ -d "UnpackedROMs/system/system/$p" ] && [ ! -L "UnpackedROMs/system/system/$p" ]; then
+              target="UnpackedROMs/system/system"
+            else
+              continue
+            fi
+            if [ -d "UnpackedROMs/$p" ]; then
+              mv "UnpackedROMs/$p" "$target/"
+            fi
+          fi
+        done
+
+    - name: 🏗️ Run FoxetGSITool
+      run: |
+        sudo bash FoxetGSITool.sh "UnpackedROMs/system" "${{ github.event.inputs.rom_type }}"
 
     - name: 📦 Adaptive pack image
       run: |
@@ -40,10 +99,8 @@ jobs:
         if [ -f "$IMAGE" ]; then
           SIZE=$(stat -c%s "$IMAGE")
           if [ "$SIZE" -gt $((2 * 1024 * 1024 * 1024)) ]; then
-            echo "📦 Image >2GB → using 7z split"
             7z a -v2000m -tzip FoxetGSIROM.zip "$IMAGE"
           else
-            echo "📦 Image ≤2GB → using zip (no split)"
             zip -j FoxetGSIROM.zip "$IMAGE"
           fi
         else

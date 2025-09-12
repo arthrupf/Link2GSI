@@ -22,9 +22,9 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y \
-        unace unrar zip unzip p7zip-full p7zip-rar sharutils rar \
-        uudeview mpack arj cabextract rename liblzma-dev python3-pip \
-        brotli lz4 protobuf-compiler git gawk wget jq util-linux
+          unace unrar zip unzip p7zip-full p7zip-rar sharutils rar \
+          uudeview mpack arj cabextract rename liblzma-dev python3-pip \
+          brotli lz4 protobuf-compiler git gawk wget jq util-linux rsync
         pip3 install tqdm
 
     - name: 📁 Setup directories
@@ -46,9 +46,10 @@ jobs:
         partitions="vendor system system_ext product optics prism mi_ext my_bigball my_engineering my_manifest my_region my_carrier my_heytap my_product my_stock"
         for partition in $partitions; do
           if [[ -f "UnpackedROMs/$partition.img" ]]; then
+            echo "🔍 Unpacking $partition.img"
             mkdir -p "UnpackedROMs/$partition"
-            sudo mount -o loop,ro -t ext4 "UnpackedROMs/$partition.img" UnpackedROMs/temp_mount || sudo mount "UnpackedROMs/$partition.img" UnpackedROMs/temp_mount
-            cp -r UnpackedROMs/temp_mount/. "UnpackedROMs/$partition/"
+            sudo mount -o loop,ro,nosuid,nodev -t ext4 "UnpackedROMs/$partition.img" UnpackedROMs/temp_mount || sudo mount "UnpackedROMs/$partition.img" UnpackedROMs/temp_mount
+            rsync -a --no-perms --no-owner --no-group UnpackedROMs/temp_mount/ UnpackedROMs/$partition/ || echo "⚠️ rsync fallback for $partition"
             sudo umount -R UnpackedROMs/temp_mount
           fi
         done
@@ -65,6 +66,7 @@ jobs:
             continue
           fi
           if [ -d "UnpackedROMs/$partition" ]; then
+            echo "📦 Moving $partition into $target"
             mv "UnpackedROMs/$partition" "$target/"
           fi
         done
@@ -79,6 +81,7 @@ jobs:
         if [ -f "$IMAGE" ]; then
           SIZE=$(stat -c%s "$IMAGE")
           if [ "$SIZE" -gt $((2 * 1024 * 1024 * 1024)) ]; then
+            echo "🧩 Splitting image..."
             split -b 1900M "$IMAGE" "OutputSplit/$(basename $IMAGE).part"
           else
             cp "$IMAGE" OutputSplit/

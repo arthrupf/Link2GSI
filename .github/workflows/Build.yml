@@ -32,12 +32,7 @@ jobs:
 
     - name: 🔧 Clone Firmware_extractor
       run: |
-        if [ -d Tools/Firmware_extractor ]; then
-          git -C Tools/Firmware_extractor fetch origin
-          git -C Tools/Firmware_extractor reset --hard origin/master
-        else
-          git clone --recurse-submodules https://github.com/AndroidDumps/Firmware_extractor.git Tools/Firmware_extractor
-        fi
+        git clone --depth=1 --recurse-submodules https://github.com/AndroidDumps/Firmware_extractor.git Tools/Firmware_extractor
 
     - name: 📂 Extract firmware
       run: |

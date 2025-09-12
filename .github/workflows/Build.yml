@@ -20,7 +20,7 @@ jobs:
                 mkdir -p DownloadedROMs
                 mkdir -p UnpackedROMs
                 mkdir -p UnpackedROMs/system                
-                sudo bash LinkToGSI.sh ${{github.event.inputs.ROM_URL}} Pixel
+                sudo bash LinkToGSI.sh ${{github.event.inputs.ROM_URL}} Generic
                 7z a -v500m -tzip FoxetGSIROM.zip Output/*.img
         - name: Upload to Release
           uses: softprops/action-gh-release@v1

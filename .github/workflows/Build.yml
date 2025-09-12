@@ -31,30 +31,30 @@ jobs:
         rm -rf DownloadedROMs UnpackedROMs Output OutputSplit
         mkdir -p DownloadedROMs UnpackedROMs Output OutputSplit
 
-    - name: 🌐 Download firmware
+    - name: 🌐 Download firmware with progress
       run: |
-        wget -O DownloadedROMs/firmware.zip "${{ github.event.inputs.firmware_url }}"
+        wget --progress=bar:force -O DownloadedROMs/firmware.zip "${{ github.event.inputs.firmware_url }}"
 
     - name: 🔍 Detect and extract firmware
       run: |
-        unzip -l DownloadedROMs/firmware.zip | grep -q "payload.bin"
-        if [ $? -eq 0 ]; then
+        HAS_PAYLOAD=$(unzip -l DownloadedROMs/firmware.zip | grep -c "payload.bin" || true)
+        HAS_SUPER=$(unzip -l DownloadedROMs/firmware.zip | grep -c "super.img" || true)
+
+        if [ "$HAS_PAYLOAD" -gt 0 ]; then
           echo "✅ Detected payload.bin → using payload-dumper-go"
           unzip -j DownloadedROMs/firmware.zip payload.bin -d DownloadedROMs/
           wget -O dumper https://github.com/ssut/payload-dumper-go/releases/latest/download/payload-dumper-go-linux-amd64
           chmod +x dumper
           ./dumper -o UnpackedROMs DownloadedROMs/payload.bin
+        elif [ "$HAS_SUPER" -gt 0 ]; then
+          echo "✅ Detected super.img → using lpunpack"
+          unzip -j DownloadedROMs/firmware.zip super.img -d DownloadedROMs/
+          mkdir -p UnpackedROMs
+          lpunpack DownloadedROMs/super.img UnpackedROMs/
         else
-          unzip -l DownloadedROMs/firmware.zip | grep -q "super.img"
-          if [ $? -eq 0 ]; then
-            echo "✅ Detected super.img → using lpunpack"
-            unzip -j DownloadedROMs/firmware.zip super.img -d DownloadedROMs/
-            mkdir -p UnpackedROMs
-            lpunpack DownloadedROMs/super.img UnpackedROMs/
-          else
-            echo "❌ Unknown firmware format: no payload.bin or super.img found"
-            exit 1
-          fi
+          echo "❌ Unknown firmware format: no payload.bin or super.img found"
+          unzip -l DownloadedROMs/firmware.zip || echo "⚠️ Failed to list contents"
+          exit 1
         fi
 
     - name: 🧩 Mount and unpack partitions

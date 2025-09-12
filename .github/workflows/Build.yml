@@ -22,27 +22,44 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y \
-          unace unrar zip unzip p7zip-full p7zip-rar sharutils rar \
-          uudeview mpack arj cabextract rename liblzma-dev python3-pip \
-          brotli lz4 protobuf-compiler git gawk wget jq util-linux rsync
+          unzip zip rsync util-linux wget jq \
+          lz4 brotli p7zip-full python3-pip
         pip3 install tqdm
 
     - name: 📁 Setup directories
       run: |
         rm -rf DownloadedROMs UnpackedROMs Output OutputSplit
-        mkdir -p DownloadedROMs UnpackedROMs UnpackedROMs/system UnpackedROMs/temp_mount Output OutputSplit
+        mkdir -p DownloadedROMs UnpackedROMs Output OutputSplit
 
-    - name: 🔧 Clone Firmware_extractor
-      run: |
-        git clone --recurse-submodules https://github.com/erfanoabdi/Firmware_extractor.git Tools/Firmware_extractor
-
-    - name: 🌐 Download and extract firmware
+    - name: 🌐 Download firmware
       run: |
         wget -O DownloadedROMs/firmware.zip "${{ github.event.inputs.firmware_url }}"
-        bash Tools/Firmware_extractor/extractor.sh DownloadedROMs/firmware.zip UnpackedROMs/
+
+    - name: 🔍 Detect and extract firmware
+      run: |
+        unzip -l DownloadedROMs/firmware.zip | grep -q "payload.bin"
+        if [ $? -eq 0 ]; then
+          echo "✅ Detected payload.bin → using payload-dumper-go"
+          unzip -j DownloadedROMs/firmware.zip payload.bin -d DownloadedROMs/
+          wget -O dumper https://github.com/ssut/payload-dumper-go/releases/latest/download/payload-dumper-go-linux-amd64
+          chmod +x dumper
+          ./dumper -o UnpackedROMs DownloadedROMs/payload.bin
+        else
+          unzip -l DownloadedROMs/firmware.zip | grep -q "super.img"
+          if [ $? -eq 0 ]; then
+            echo "✅ Detected super.img → using lpunpack"
+            unzip -j DownloadedROMs/firmware.zip super.img -d DownloadedROMs/
+            mkdir -p UnpackedROMs
+            lpunpack DownloadedROMs/super.img UnpackedROMs/
+          else
+            echo "❌ Unknown firmware format: no payload.bin or super.img found"
+            exit 1
+          fi
+        fi
 
     - name: 🧩 Mount and unpack partitions
       run: |
+        mkdir -p UnpackedROMs/temp_mount
         partitions="vendor system system_ext product optics prism mi_ext my_bigball my_engineering my_manifest my_region my_carrier my_heytap my_product my_stock"
         for partition in $partitions; do
           if [[ -f "UnpackedROMs/$partition.img" ]]; then

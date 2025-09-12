@@ -1,9 +1,9 @@
-name: AutoGSI Build & Release
+name: LinkToGSI Modular Builder
 
 on:
   workflow_dispatch:
     inputs:
-      firmware_url:
+      ROM_URL:
         description: 'Direct link to firmware zip'
         required: true
       rom_type:
@@ -22,121 +22,38 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y \
-          unace unrar zip unzip p7zip-full p7zip-rar sharutils rar \
-          uudeview mpack arj cabextract rename liblzma-dev \
-          python3-pip brotli lz4 protobuf-compiler git gawk rsync
-        pip3 install backports.lzma protobuf pycryptodome \
-          twrpdtgen extract-dtb tqdm
+          unzip zip p7zip-full p7zip-rar rsync util-linux wget \
+          brotli lz4 python3-pip protobuf-compiler gawk
+        pip3 install backports.lzma protobuf pycryptodome extract-dtb tqdm
 
     - name: 📁 Setup directories
       run: |
-        rm -rf DownloadedROMs UnpackedROMs Output OutputSplit
-        mkdir -p DownloadedROMs UnpackedROMs Output OutputSplit
+        rm -rf DownloadedROMs UnpackedROMs Output
+        mkdir -p DownloadedROMs UnpackedROMs Output
 
-    - name: 🌐 Download firmware with progress
+    - name: 🌐 Download firmware
       run: |
-        wget --progress=bar:force -O DownloadedROMs/firmware.zip "${{ github.event.inputs.firmware_url }}"
+        wget --progress=bar:force -O DownloadedROMs/firmware.zip "${{ github.event.inputs.ROM_URL }}"
 
-    - name: 🔧 Clone Firmware_extractor
+    - name: 🛠️ Run LinkToGSI.sh
       run: |
-        git clone --depth=1 https://github.com/AndroidDumps/Firmware_extractor.git Tools/Firmware_extractor
+        sudo bash LinkToGSI.sh "${{ github.event.inputs.ROM_URL }}" "${{ github.event.inputs.rom_type }}"
 
-    - name: 🔍 Detect and extract firmware
-      run: |
-        HAS_PAYLOAD=$(unzip -l DownloadedROMs/firmware.zip | grep -c "payload.bin" || true)
-        HAS_SUPER=$(unzip -l DownloadedROMs/firmware.zip | grep -c "super.img" || true)
-
-        if [ "$HAS_PAYLOAD" -gt 0 ]; then
-          echo "✅ Detected payload.bin → using payload-dumper-go"
-          unzip -j DownloadedROMs/firmware.zip payload.bin -d DownloadedROMs/
-          wget -O dumper https://github.com/ssut/payload-dumper-go/releases/latest/download/payload-dumper-go-linux-amd64
-          chmod +x dumper
-          ./dumper -o UnpackedROMs DownloadedROMs/payload.bin
-        elif [ "$HAS_SUPER" -gt 0 ]; then
-          echo "✅ Detected super.img → using lpunpack"
-          unzip -j DownloadedROMs/firmware.zip super.img -d DownloadedROMs/
-          mkdir -p UnpackedROMs
-          lpunpack DownloadedROMs/super.img UnpackedROMs/
-        else
-          echo "⚠️ Unknown format → fallback to Firmware_extractor"
-          bash Tools/Firmware_extractor/extractor.sh DownloadedROMs/firmware.zip UnpackedROMs/
-        fi
-
-    - name: 🧩 Mount and unpack partitions
-      run: |
-        mkdir -p UnpackedROMs/temp_mount
-        partitions="vendor system system_ext product optics prism mi_ext my_bigball my_engineering my_manifest my_region my_carrier my_heytap my_product my_stock"
-        for partition in $partitions; do
-          if [[ -f "UnpackedROMs/$partition.img" ]]; then
-            echo "🔍 Unpacking $partition.img"
-            mkdir -p "UnpackedROMs/$partition"
-            sudo mount -o loop,ro,nosuid,nodev -t ext4 "UnpackedROMs/$partition.img" UnpackedROMs/temp_mount || sudo mount "UnpackedROMs/$partition.img" UnpackedROMs/temp_mount
-            rsync -a --no-perms --no-owner --no-group UnpackedROMs/temp_mount/ UnpackedROMs/$partition/ || echo "⚠️ rsync fallback for $partition"
-            sudo umount -R UnpackedROMs/temp_mount
-          fi
-        done
-
-    - name: 🔀 Reposition partitions into system
-      run: |
-        for partition in $partitions; do
-          if [ "$partition" != "system" ]; then
-            if [ -d "UnpackedROMs/system/$partition" ] && [ ! -L "UnpackedROMs/system/$partition" ]; then
-              target="UnpackedROMs/system"
-            elif [ -d "UnpackedROMs/system/system/$partition" ] && [ ! -L "UnpackedROMs/system/system/$partition" ]; then
-              target="UnpackedROMs/system/system"
-            else
-              continue
-            fi
-            if [ -d "UnpackedROMs/$partition" ]; then
-              echo "📦 Moving $partition into $target"
-              mv "UnpackedROMs/$partition" "$target/"
-            fi
-          fi
-        done
-
-    - name: 🧬 Patch build.prop if needed
-      run: |
-        if [ -f "UnpackedROMs/system/build.prop" ] && [ ! -f "UnpackedROMs/system/system/build.prop" ]; then
-          mkdir -p "UnpackedROMs/system/system"
-          cp "UnpackedROMs/system/build.prop" "UnpackedROMs/system/system/build.prop"
-        fi
-
-    - name: 🛠️ Run FoxetGSITool
-      run: |
-        sudo bash FoxetGSITool.sh UnpackedROMs/system "${{ github.event.inputs.rom_type }}"
-
-    - name: 📦 Zip image before split
+    - name: 📦 Pack image with 7z split (2GB)
       run: |
         IMAGE=$(find Output -name "*.img" | head -n1)
         if [ -f "$IMAGE" ]; then
-          ZIPNAME="Output/$(basename "$IMAGE" .img).zip"
-          zip -j "$ZIPNAME" "$IMAGE"
+          7z a -v2000m -tzip FoxetGSIROM.zip "$IMAGE"
         else
-          echo "❌ No image found to zip"
-          exit 1
-        fi
-
-    - name: 🧩 Split zip if >2GB
-      run: |
-        ZIPFILE=$(find Output -name "*.zip" | head -n1)
-        if [ -f "$ZIPFILE" ]; then
-          SIZE=$(stat -c%s "$ZIPFILE")
-          if [ "$SIZE" -gt $((2 * 1024 * 1024 * 1024)) ]; then
-            echo "🧩 Splitting zip..."
-            split -b 1900M "$ZIPFILE" "OutputSplit/$(basename "$ZIPFILE").part"
-          else
-            cp "$ZIPFILE" OutputSplit/
-          fi
-        else
-          echo "❌ No zip file found"
+          echo "❌ No image found to pack"
           exit 1
         fi
 
     - name: 🚀 Upload to GitHub Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: "AutoGSI-${{ github.run_id }}"
-        name: "AutoGSI Build ${{ github.run_id }}"
-        files: OutputSplit/*
+        tag_name: "FoxetGSI-${{ github.run_id }}"
+        name: "FoxetGSI Build ${{ github.run_id }}"
+        files: FoxetGSIROM.zip*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

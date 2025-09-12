@@ -24,7 +24,7 @@ jobs:
         sudo apt install -y \
           unzip zip p7zip-full p7zip-rar rsync util-linux wget \
           brotli lz4 python3-pip protobuf-compiler gawk
-        pip3 install backports.lzma protobuf pycryptodome extract-dtb tqdm
+        pip3 install protobuf pycryptodome extract-dtb tqdm
 
     - name: 📁 Setup directories
       run: |

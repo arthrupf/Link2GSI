@@ -22,9 +22,11 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y \
-          unzip zip rsync util-linux wget jq \
-          lz4 brotli p7zip-full python3-pip
-        pip3 install tqdm
+          unace unrar zip unzip p7zip-full p7zip-rar sharutils rar \
+          uudeview mpack arj cabextract rename liblzma-dev \
+          python3-pip brotli lz4 protobuf-compiler git gawk rsync
+        pip3 install backports.lzma protobuf pycrypto pycryptodome \
+          twrpdtgen extract-dtb tqdm
 
     - name: 📁 Setup directories
       run: |
@@ -34,6 +36,10 @@ jobs:
     - name: 🌐 Download firmware with progress
       run: |
         wget --progress=bar:force -O DownloadedROMs/firmware.zip "${{ github.event.inputs.firmware_url }}"
+
+    - name: 🔧 Clone Firmware_extractor
+      run: |
+        git clone --depth=1 https://github.com/AndroidDumps/Firmware_extractor.git Tools/Firmware_extractor
 
     - name: 🔍 Detect and extract firmware
       run: |
@@ -52,9 +58,8 @@ jobs:
           mkdir -p UnpackedROMs
           lpunpack DownloadedROMs/super.img UnpackedROMs/
         else
-          echo "❌ Unknown firmware format: no payload.bin or super.img found"
-          unzip -l DownloadedROMs/firmware.zip || echo "⚠️ Failed to list contents"
-          exit 1
+          echo "⚠️ Unknown format → fallback to Firmware_extractor"
+          bash Tools/Firmware_extractor/extractor.sh DownloadedROMs/firmware.zip UnpackedROMs/
         fi
 
     - name: 🧩 Mount and unpack partitions

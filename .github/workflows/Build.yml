@@ -1,9 +1,9 @@
-name: LinkToGSI Modular Builder
+name: LinkToGSI Builder
 
 on:
   workflow_dispatch:
     inputs:
-      ROM_URL:
+      firmware_url:
         description: 'Direct link to firmware zip'
         required: true
       rom_type:
@@ -24,20 +24,11 @@ jobs:
         sudo apt install -y \
           unzip zip p7zip-full p7zip-rar rsync util-linux wget \
           brotli lz4 python3-pip protobuf-compiler gawk
-        pip3 install protobuf pycryptodome extract-dtb tqdm
-
-    - name: 📁 Setup directories
-      run: |
-        rm -rf DownloadedROMs UnpackedROMs Output
-        mkdir -p DownloadedROMs UnpackedROMs Output
-
-    - name: 🌐 Download firmware
-      run: |
-        wget --progress=bar:force -O DownloadedROMs/firmware.zip "${{ github.event.inputs.ROM_URL }}"
+        pip3 install pycryptodome extract-dtb tqdm
 
     - name: 🛠️ Run LinkToGSI.sh
       run: |
-        sudo bash LinkToGSI.sh DownloadedROMs/firmware.zip "${{ github.event.inputs.rom_type }}"
+        sudo bash LinkToGSI.sh "${{ github.event.inputs.firmware_url }}" "${{ github.event.inputs.rom_type }}"
 
     - name: 📦 Pack image with 7z split (2GB)
       run: |

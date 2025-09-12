@@ -71,6 +71,13 @@ jobs:
           fi
         done
 
+    - name: 🧬 Patch build.prop path if missing
+      run: |
+        if [ -f "UnpackedROMs/system/build.prop" ] && [ ! -f "UnpackedROMs/system/system/build.prop" ]; then
+          mkdir -p "UnpackedROMs/system/system"
+          cp "UnpackedROMs/system/build.prop" "UnpackedROMs/system/system/build.prop"
+        fi
+
     - name: 🛠️ Run FoxetGSITool
       run: |
         sudo bash FoxetGSITool.sh UnpackedROMs/system "${{ github.event.inputs.rom_type }}"

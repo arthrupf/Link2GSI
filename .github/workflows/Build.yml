@@ -37,7 +37,7 @@ jobs:
 
     - name: 🛠️ Run LinkToGSI.sh
       run: |
-        sudo bash LinkToGSI.sh "${{ github.event.inputs.ROM_URL }}" "${{ github.event.inputs.rom_type }}"
+        sudo bash LinkToGSI.sh DownloadedROMs/firmware.zip "${{ github.event.inputs.rom_type }}"
 
     - name: 📦 Pack image with 7z split (2GB)
       run: |

@@ -26,6 +26,10 @@ jobs:
           brotli lz4 python3-pip protobuf-compiler gawk
         pip3 install pycryptodome extract-dtb tqdm
 
+    - name: 🔧 Clone Firmware_extractor (AndroidDumps)
+      run: |
+        git clone --depth=1 https://github.com/AndroidDumps/Firmware_extractor.git Tools/Firmware_extractor
+
     - name: 🛠️ Run LinkToGSI.sh
       run: |
         sudo bash LinkToGSI.sh "${{ github.event.inputs.firmware_url }}" "${{ github.event.inputs.rom_type }}"

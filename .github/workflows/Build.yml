@@ -1,4 +1,4 @@
-name: AutoGSI Build
+name: AutoGSI Build & Release
 
 on:
   workflow_dispatch:
@@ -29,17 +29,12 @@ jobs:
 
     - name: 📁 Setup directories
       run: |
-        rm -rf DownloadedROMs UnpackedROMs
-        mkdir -p DownloadedROMs UnpackedROMs
+        rm -rf DownloadedROMs UnpackedROMs Output OutputSplit
+        mkdir -p DownloadedROMs UnpackedROMs UnpackedROMs/system UnpackedROMs/temp_mount Output OutputSplit
 
     - name: 🔧 Clone Firmware_extractor
       run: |
-        if [[ -d "Tools/Firmware_extractor" ]]; then
-          git -C Tools/Firmware_extractor fetch origin
-          git -C Tools/Firmware_extractor reset --hard origin/master
-        else
-          git clone --recurse-submodules https://github.com/FoxetGSI/Firmware_extractor.git Tools/Firmware_extractor
-        fi
+        git clone --recurse-submodules https://github.com/erfanoabdi/Firmware_extractor.git Tools/Firmware_extractor
 
     - name: 🌐 Download and extract firmware
       run: |
@@ -52,13 +47,8 @@ jobs:
         for partition in $partitions; do
           if [[ -f "UnpackedROMs/$partition.img" ]]; then
             echo "🔍 Unpacking $partition.img"
-            mkdir -p "UnpackedROMs/temp_mount" "UnpackedROMs/$partition"
-            fs_type=$(blkid -o value -s TYPE "UnpackedROMs/$partition.img" 2>/dev/null)
-            if [[ "$fs_type" == "ext2" || "$fs_type" == "ext4" ]]; then
-              sudo mount -o loop,ro -t ext4 "UnpackedROMs/$partition.img" UnpackedROMs/temp_mount
-            else
-              sudo mount "UnpackedROMs/$partition.img" UnpackedROMs/temp_mount
-            fi
+            mkdir -p "UnpackedROMs/$partition"
+            sudo mount -o loop,ro,nosuid,nodev -t ext4 "UnpackedROMs/$partition.img" UnpackedROMs/temp_mount || sudo mount "UnpackedROMs/$partition.img" UnpackedROMs/temp_mount
             rsync -a --no-perms --no-owner --no-group UnpackedROMs/temp_mount/ UnpackedROMs/$partition/ || echo "⚠️ rsync fallback for $partition"
             sudo umount -R UnpackedROMs/temp_mount
           fi
@@ -92,3 +82,39 @@ jobs:
     - name: 🛠️ Run FoxetGSITool
       run: |
         sudo bash FoxetGSITool.sh UnpackedROMs/system "${{ github.event.inputs.rom_type }}"
+
+    - name: 📦 Zip image before split
+      run: |
+        IMAGE=$(find Output -name "*.img" | head -n1)
+        if [ -f "$IMAGE" ]; then
+          ZIPNAME="Output/$(basename "$IMAGE" .img).zip"
+          zip -j "$ZIPNAME" "$IMAGE"
+        else
+          echo "❌ No image found to zip"
+          exit 1
+        fi
+
+    - name: 🧩 Split zip if >2GB
+      run: |
+        ZIPFILE=$(find Output -name "*.zip" | head -n1)
+        if [ -f "$ZIPFILE" ]; then
+          SIZE=$(stat -c%s "$ZIPFILE")
+          if [ "$SIZE" -gt $((2 * 1024 * 1024 * 1024)) ]; then
+            echo "🧩 Splitting zip..."
+            split -b 1900M "$ZIPFILE" "OutputSplit/$(basename "$ZIPFILE").part"
+          else
+            cp "$ZIPFILE" OutputSplit/
+          fi
+        else
+          echo "❌ No zip file found"
+          exit 1
+        fi
+
+    - name: 🚀 Upload to GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: "AutoGSI-${{ github.run_id }}"
+        name: "AutoGSI Build ${{ github.run_id }}"
+        files: OutputSplit/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

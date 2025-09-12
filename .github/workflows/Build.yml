@@ -1,34 +1,70 @@
-name: Можули
+name: AutoGSI Release
 
 on:
-    workflow_dispatch:
-        inputs:
-            ROM_URL:
-                description: 'ROM_URL'
-                required: true
-                default: 'https://github.com/FoxetGSI/Builds/releases/download/06is1527/Generic-AB-13-2025-06-02-FoxetGSI.7z'
+  workflow_dispatch:
+    inputs:
+      firmware_url:
+        description: 'Direct link to firmware zip'
+        required: true
+      rom_type:
+        description: 'ROM type (Generic, HyperOS, etc)'
+        required: true
+
 jobs:
-    build:
-        runs-on: ubuntu-latest
-        permissions:
-            contents: write
-        steps:
-        - name: Download & Patch
-          run: |
-                #sudo apt update && sudo apt install unace unrar zip unzip p7zip-full p7zip-rar sharutils rar uudeview mpack arj cabextract rename liblzma-dev python-pip brotli lz4 protobuf-compiler git gawk
-                git clone https://github.com/khusnan21/OriginGSITool/ && cd OriginGSITool
-                mkdir -p DownloadedROMs
-                mkdir -p UnpackedROMs
-                mkdir -p UnpackedROMs/system                
-                sudo bash LinkToGSI.sh ${{github.event.inputs.ROM_URL}} Generic
-                7z a -v500m -tzip FoxetGSIROM.zip Output/*.img
-        - name: Upload to Release
-          uses: softprops/action-gh-release@v1
-          with:
-            files: | 
-              OriginGSITool/FoxetGSIROM.*
-              OriginGSITool/Output/FoxetGSIROM.*
-            name: FoxetGSI-${{ github.run_id }}
-            tag_name: ${{ github.run_id }}
-          env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  build-gsi:
+    runs-on: ubuntu-latest
+    name: Build GSI and Upload
+
+    steps:
+    - name: ⬇️ Checkout repo
+      uses: actions/checkout@v3
+
+    - name: 🛠️ Install full dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          unace unrar zip unzip p7zip-full p7zip-rar sharutils rar \
+          uudeview mpack arj cabextract rename liblzma-dev python-pip \
+          brotli lz4 protobuf-compiler git gawk wget jq
+        pip install tqdm
+
+    - name: 📁 Setup working directories
+      run: |
+        mkdir -p DownloadedROMs
+        mkdir -p UnpackedROMs
+        mkdir -p UnpackedROMs/system
+        mkdir -p Output
+        mkdir -p OutputSplit
+
+    - name: 🌐 Download firmware
+      run: |
+        wget -O DownloadedROMs/firmware.zip "${{ github.event.inputs.firmware_url }}"
+        unzip -o DownloadedROMs/firmware.zip -d UnpackedROMs
+
+    - name: 🔧 Run LinkToGSI
+      run: |
+        bash LinkToGSI.sh "${{ github.event.inputs.firmware_url }}" "${{ github.event.inputs.rom_type }}"
+
+    - name: 🧩 Split image if >2GB
+      run: |
+        IMAGE=$(find Output -name "*.img" | head -n1)
+        if [ -f "$IMAGE" ]; then
+          SIZE=$(stat -c%s "$IMAGE")
+          if [ "$SIZE" -gt $((2 * 1024 * 1024 * 1024)) ]; then
+            split -b 1900M "$IMAGE" "OutputSplit/$(basename $IMAGE).part"
+          else
+            cp "$IMAGE" OutputSplit/
+          fi
+        else
+          echo "❌ No image found in Output/"
+          exit 1
+        fi
+
+    - name: 🚀 Upload to GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: "AutoGSI-${{ github.run_id }}"
+        name: "AutoGSI Build ${{ github.run_id }}"
+        files: OutputSplit/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

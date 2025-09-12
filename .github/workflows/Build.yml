@@ -25,7 +25,7 @@ jobs:
           unace unrar zip unzip p7zip-full p7zip-rar sharutils rar \
           uudeview mpack arj cabextract rename liblzma-dev \
           python3-pip brotli lz4 protobuf-compiler git gawk rsync
-        pip3 install backports.lzma protobuf pycrypto pycryptodome \
+        pip3 install backports.lzma protobuf pycryptodome \
           twrpdtgen extract-dtb tqdm
 
     - name: 📁 Setup directories

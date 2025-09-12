@@ -26,7 +26,7 @@ jobs:
           brotli lz4 python3-pip protobuf-compiler gawk
         pip3 install pycryptodome extract-dtb tqdm
 
-    - name: 🔧 Clone Firmware_extractor (AndroidDumps)
+    - name: 🔧 Clone Firmware_extractor (fallback tool)
       run: |
         git clone --depth=1 https://github.com/AndroidDumps/Firmware_extractor.git Tools/Firmware_extractor
 
@@ -34,11 +34,18 @@ jobs:
       run: |
         sudo bash LinkToGSI.sh "${{ github.event.inputs.firmware_url }}" "${{ github.event.inputs.rom_type }}"
 
-    - name: 📦 Pack image with 7z split (2GB)
+    - name: 📦 Adaptive pack image
       run: |
         IMAGE=$(find Output -name "*.img" | head -n1)
         if [ -f "$IMAGE" ]; then
-          7z a -v2000m -tzip FoxetGSIROM.zip "$IMAGE"
+          SIZE=$(stat -c%s "$IMAGE")
+          if [ "$SIZE" -gt $((2 * 1024 * 1024 * 1024)) ]; then
+            echo "📦 Image >2GB → using 7z split"
+            7z a -v2000m -tzip FoxetGSIROM.zip "$IMAGE"
+          else
+            echo "📦 Image ≤2GB → using zip (no split)"
+            zip -j FoxetGSIROM.zip "$IMAGE"
+          fi
         else
           echo "❌ No image found to pack"
           exit 1

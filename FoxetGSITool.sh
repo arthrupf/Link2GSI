@@ -12,7 +12,7 @@ usage() {
 
 supported_roms() {
   echo "Available ROMs:"
-  declare -a versions=(12 12.1 13 14 15 16)
+  declare -a versions=(12 12.1 13 14 15 16 17)
   for version in "${versions[@]}"; do
     rom_dir="ROMsPatches/$version"
     if [ -d "$rom_dir" ]; then
@@ -73,6 +73,7 @@ case "$SDK_VERSION" in
   34) android_version="14" ;;
   35) android_version="15" ;;
   36) android_version="16" ;;
+  37) android_version="17" ;;
   *) echo "❌ Unsupported SDK version $SDK_VERSION"; exit 1 ;;
 esac
 

@@ -24,7 +24,7 @@ fi
 sed -i "/dataservice_app/d" $product/etc/selinux/product_seapp_contexts
 sed -i "/dataservice_app/d" $system_ext/etc/selinux/system_ext_seapp_contexts
 
-# Delete Google apps
+# Delete Google apps (your original list)
 rm -rf $BASE_DIR/system/app/datastatusnotification
 rm -rf $BASE_DIR/system/app/QAS_DVC_MSP_VZW
 rm -rf $BASE_DIR/system/app/VZWAPNLib
@@ -91,10 +91,15 @@ rm -rf $product/priv-app/AdaptiveVPNPrebuilt*
 rm -rf $product/priv-app/AndroidAutoStubPrebuilt
 rm -rf $product/priv-app/PrebuiltDeskClockGoogle*
 rm -rf $product/priv-app/PixelSupportPrebuilt
-rm -rf $product/priv-app/PixelSupportPrebuilt
 rm -rf $product/priv-app/WeatherPixelPrebuilt*
 rm -rf $product/app/WallpaperEmojiPrebuilt*
 rm -rf $product/app/WallpaperAIPrebuilt*
+
+# Remove Pixel Setup Wizard only
+rm -rf $product/app/SetupWizard*
+rm -rf $product/priv-app/SetupWizard*
+rm -rf $system_ext/priv-app/SetupWizard*
+rm -rf $BASE_DIR/system/priv-app/SetupWizard*
 
 # Hotword
 rm -rf $product/priv-app/HotwordEnrollment*

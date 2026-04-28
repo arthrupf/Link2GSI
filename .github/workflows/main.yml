@@ -13,7 +13,7 @@ on:
         options:
           - OneUI
           - Pixel
-          - MIUIGeneric
+          - Generic
           - HyperOS
           - HMD
 
